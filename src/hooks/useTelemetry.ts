@@ -11,15 +11,33 @@ export type TelemetryEvent = {
   details: string;
 };
 
-const STORAGE_KEY = "auragen-telemetry";
-
-const emptyData = {
-  events: [] as TelemetryEvent[],
-  interactionCount: 0,
-  hesitationCount: 0,
-  errorCount: 0,
-  repeatedClickCount: 0,
+type AuraGenSettings = {
+  cognitiveLoadThreshold: number;
+  hesitationThresholdMs: number;
+  repeatedClickWindowMs: number;
+  autoAdaptationEnabled: boolean;
 };
+
+const STORAGE_KEY = "auragen-telemetry";
+const SETTINGS_KEY = "auragen-settings";
+
+const DEFAULT_SETTINGS: AuraGenSettings = {
+  cognitiveLoadThreshold: 60,
+  hesitationThresholdMs: 4000,
+  repeatedClickWindowMs: 1500,
+  autoAdaptationEnabled: false,
+};
+
+function readSettings(): AuraGenSettings {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    return saved
+      ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }
+      : DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
 
 export function useTelemetry() {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
@@ -27,6 +45,8 @@ export function useTelemetry() {
   const [hesitationCount, setHesitationCount] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
   const [repeatedClickCount, setRepeatedClickCount] = useState(0);
+  const [settings, setSettings] =
+    useState<AuraGenSettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
 
   const focusTimes = useRef<Record<string, number>>({});
@@ -34,7 +54,6 @@ export function useTelemetry() {
   const activeFields = useRef<Set<string>>(new Set());
   const eventId = useRef(0);
 
-  // Load previously saved telemetry once.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -48,20 +67,36 @@ export function useTelemetry() {
         setErrorCount(data.errorCount ?? 0);
         setRepeatedClickCount(data.repeatedClickCount ?? 0);
 
-        const highestId = Math.max(
+        eventId.current = Math.max(
           0,
-          ...(data.events ?? []).map((event: TelemetryEvent) => event.id)
+          ...(data.events ?? []).map(
+            (event: TelemetryEvent) => event.id
+          )
         );
-        eventId.current = highestId;
       }
+
+      setSettings(readSettings());
     } catch (error) {
-      console.error("Could not load telemetry:", error);
+      console.error("Could not load AuraGen data:", error);
     }
 
     setLoaded(true);
   }, []);
 
-  // Save every telemetry update for the dashboard.
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key === SETTINGS_KEY) {
+        setSettings(readSettings());
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
   useEffect(() => {
     if (!loaded) return;
 
@@ -85,7 +120,11 @@ export function useTelemetry() {
   ]);
 
   const addEvent = useCallback(
-    (type: TelemetryEvent["type"], field: string, details: string) => {
+    (
+      type: TelemetryEvent["type"],
+      field: string,
+      details: string
+    ) => {
       const event: TelemetryEvent = {
         id: ++eventId.current,
         type,
@@ -116,8 +155,12 @@ export function useTelemetry() {
     (field: string) => {
       const now = Date.now();
       const previousClick = clickTimes.current[field];
+      const currentSettings = readSettings();
 
-      if (previousClick && now - previousClick < 1500) {
+      if (
+        previousClick &&
+        now - previousClick < currentSettings.repeatedClickWindowMs
+      ) {
         setRepeatedClickCount((count) => count + 1);
         addEvent("click", field, "Repeated click detected");
       }
@@ -137,7 +180,9 @@ export function useTelemetry() {
       const duration = Date.now() - startTime;
       delete focusTimes.current[field];
 
-      if (duration >= 4000) {
+      const currentSettings = readSettings();
+
+      if (duration >= currentSettings.hesitationThresholdMs) {
         setHesitationCount((count) => count + 1);
 
         addEvent(
@@ -185,6 +230,13 @@ export function useTelemetry() {
       errorCount * 15
   );
 
+  const isHighFriction =
+    cognitiveLoadScore >= settings.cognitiveLoadThreshold;
+
+  // Adaptation is permitted only when explicitly enabled in Settings.
+  const shouldAdapt =
+    settings.autoAdaptationEnabled && isHighFriction;
+
   return {
     events,
     interactionCount,
@@ -192,6 +244,9 @@ export function useTelemetry() {
     errorCount,
     repeatedClickCount,
     cognitiveLoadScore,
+    settings,
+    isHighFriction,
+    shouldAdapt,
     trackFocus,
     trackClick,
     trackBlur,

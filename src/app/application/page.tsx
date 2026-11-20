@@ -1,12 +1,25 @@
 
 "use client";
-import { useTelemetry } from "@/hooks/useTelemetry";
+
 import { useState } from "react";
+import { useTelemetry } from "@/hooks/useTelemetry";
 
 export default function FinancialApplication() {
-    
   const [submitted, setSubmitted] = useState(false);
+  const [forceStandardLayout, setForceStandardLayout] = useState(false);
+
   const telemetry = useTelemetry();
+
+  const adaptationEnabled = telemetry.settings.autoAdaptationEnabled;
+  const thresholdReached =
+    telemetry.cognitiveLoadScore >=
+    telemetry.settings.cognitiveLoadThreshold;
+
+  const isSimplified =
+    adaptationEnabled &&
+    thresholdReached &&
+    telemetry.isHighFriction &&
+    !forceStandardLayout;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -15,7 +28,7 @@ export default function FinancialApplication() {
 
   return (
     <main className="min-h-screen bg-[#090d18] px-5 py-10 text-slate-100">
-      <div className="mx-auto max-w-4xl">
+      <div className={`mx-auto ${isSimplified ? "max-w-2xl" : "max-w-4xl"}`}>
 
         <header className="mb-8">
           <a href="/" className="text-sm text-indigo-400 hover:text-indigo-300">
@@ -26,24 +39,65 @@ export default function FinancialApplication() {
             <p className="text-sm font-medium text-indigo-400">
               AURAGEN · FINANCIAL SERVICES
             </p>
+
             <h1 className="mt-2 text-3xl font-bold">
               Financial Application
             </h1>
+
             <p className="mt-2 text-slate-400">
-              Complete the form below to submit your application.
+              {isSimplified
+                ? "Let's complete this application one section at a time."
+                : "Complete the form below to submit your application."}
             </p>
           </div>
         </header>
+
+        {adaptationEnabled && thresholdReached && (
+          <div className="mb-6 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-4">
+            <p className="font-semibold text-indigo-300">
+              {isSimplified
+                ? "AuraGen has simplified this form"
+                : "High interaction friction detected"}
+            </p>
+
+            <p className="mt-1 text-sm text-slate-300">
+              {isSimplified
+                ? "The form is now using a simplified single-column layout. Your entered information is preserved."
+                : "You can activate the simplified layout to make this form easier to navigate."}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setForceStandardLayout((previous) => !previous)}
+              className="mt-3 rounded-lg border border-indigo-400/40 px-4 py-2 text-sm text-indigo-300 hover:bg-indigo-500/20"
+            >
+              {isSimplified ? "Return to standard layout" : "Use simplified layout"}
+            </button>
+          </div>
+        )}
+
+        {!adaptationEnabled && thresholdReached && (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="font-semibold text-amber-300">
+              High interaction friction detected
+            </p>
+            <p className="mt-1 text-sm text-slate-300">
+              Automatic UI Adaptation is disabled in Settings.
+            </p>
+          </div>
+        )}
 
         {submitted ? (
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-8">
             <h2 className="text-2xl font-semibold text-emerald-400">
               Application submitted!
             </h2>
+
             <p className="mt-3 text-slate-300">
               Your demo application has passed browser validation.
               No information has been sent to a server.
             </p>
+
             <button
               onClick={() => setSubmitted(false)}
               className="mt-6 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-medium hover:bg-indigo-500"
@@ -54,7 +108,8 @@ export default function FinancialApplication() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
 
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-6">
+            {/* PERSONAL INFORMATION */}
+            <section className={`rounded-2xl border border-white/10 bg-[#111a2b] ${isSimplified ? "p-5" : "p-6"}`}>
               <div className="mb-6">
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">
                   Section 01
@@ -62,12 +117,14 @@ export default function FinancialApplication() {
                 <h2 className="mt-2 text-xl font-semibold">
                   Personal Information
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Enter your basic personal details.
-                </p>
+                {!isSimplified && (
+                  <p className="mt-1 text-sm text-slate-400">
+                    Enter your basic personal details.
+                  </p>
+                )}
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className={`grid gap-5 ${isSimplified ? "grid-cols-1" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className="mb-2 block text-sm text-slate-300">
                     Full Name
@@ -132,7 +189,7 @@ export default function FinancialApplication() {
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div className={isSimplified ? "" : "sm:col-span-2"}>
                   <label className="mb-2 block text-sm text-slate-300">
                     Residential Address
                   </label>
@@ -150,7 +207,8 @@ export default function FinancialApplication() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-6">
+            {/* EMPLOYMENT DETAILS */}
+            <section className={`rounded-2xl border border-white/10 bg-[#111a2b] ${isSimplified ? "p-5" : "p-6"}`}>
               <div className="mb-6">
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">
                   Section 02
@@ -158,12 +216,14 @@ export default function FinancialApplication() {
                 <h2 className="mt-2 text-xl font-semibold">
                   Employment Details
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Tell us about your current employment.
-                </p>
+                {!isSimplified && (
+                  <p className="mt-1 text-sm text-slate-400">
+                    Tell us about your current employment.
+                  </p>
+                )}
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className={`grid gap-5 ${isSimplified ? "grid-cols-1" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className="mb-2 block text-sm text-slate-300">
                     Employment Type
@@ -238,7 +298,8 @@ export default function FinancialApplication() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-6">
+            {/* FINANCIAL REQUIREMENTS */}
+            <section className={`rounded-2xl border border-white/10 bg-[#111a2b] ${isSimplified ? "p-5" : "p-6"}`}>
               <div className="mb-6">
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">
                   Section 03
@@ -246,12 +307,14 @@ export default function FinancialApplication() {
                 <h2 className="mt-2 text-xl font-semibold">
                   Financial Requirements
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Provide details about your requested financial assistance.
-                </p>
+                {!isSimplified && (
+                  <p className="mt-1 text-sm text-slate-400">
+                    Provide details about your requested financial assistance.
+                  </p>
+                )}
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className={`grid gap-5 ${isSimplified ? "grid-cols-1" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className="mb-2 block text-sm text-slate-300">
                     Requested Loan Amount (₹)
@@ -340,48 +403,50 @@ export default function FinancialApplication() {
                 </span>
               </label>
             </div>
+
+            {/* TELEMETRY */}
             <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-5">
-  <h3 className="font-semibold text-indigo-300">
-    Live Interaction Monitoring
-  </h3>
+              <h3 className="font-semibold text-indigo-300">
+                Live Interaction Monitoring
+              </h3>
 
-  <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-    <div>
-      <p className="text-xs text-slate-400">Interactions</p>
-      <p className="text-2xl font-bold">
-        {telemetry.interactionCount}
-      </p>
-    </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-slate-400">Interactions</p>
+                  <p className="text-2xl font-bold">
+                    {telemetry.interactionCount}
+                  </p>
+                </div>
 
-    <div>
-      <p className="text-xs text-slate-400">Hesitations</p>
-      <p className="text-2xl font-bold">
-        {telemetry.hesitationCount}
-      </p>
-    </div>
+                <div>
+                  <p className="text-xs text-slate-400">Hesitations</p>
+                  <p className="text-2xl font-bold">
+                    {telemetry.hesitationCount}
+                  </p>
+                </div>
 
-    <div>
-      <p className="text-xs text-slate-400">Repeated Clicks</p>
-      <p className="text-2xl font-bold">
-        {telemetry.repeatedClickCount}
-      </p>
-    </div>
+                <div>
+                  <p className="text-xs text-slate-400">Repeated Clicks</p>
+                  <p className="text-2xl font-bold">
+                    {telemetry.repeatedClickCount}
+                  </p>
+                </div>
 
-    <div>
-      <p className="text-xs text-slate-400">Cognitive Load</p>
-      <p className="text-2xl font-bold text-indigo-300">
-        {telemetry.cognitiveLoadScore}/100
-      </p>
-    </div>
-  </div>
-</div>
+                <div>
+                  <p className="text-xs text-slate-400">Cognitive Load</p>
+                  <p className="text-2xl font-bold text-indigo-300">
+                    {telemetry.cognitiveLoadScore}/100
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <button
               type="submit"
               className="w-full rounded-xl bg-indigo-600 px-6 py-4 font-semibold text-white transition hover:bg-indigo-500"
             >
               Submit Financial Application →
             </button>
-
           </form>
         )}
 

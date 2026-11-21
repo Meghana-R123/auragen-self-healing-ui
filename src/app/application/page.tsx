@@ -1,8 +1,9 @@
-
+﻿
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTelemetry } from "@/hooks/useTelemetry";
+import { getRecommendedLayout } from "@/lib/adaptationEngine";
 
 export default function FinancialApplication() {
   const [submitted, setSubmitted] = useState(false);
@@ -15,11 +16,39 @@ export default function FinancialApplication() {
     telemetry.cognitiveLoadScore >=
     telemetry.settings.cognitiveLoadThreshold;
 
+  const recommendedLayout = getRecommendedLayout({
+    autoAdaptationEnabled: adaptationEnabled,
+    isHighFriction: telemetry.isHighFriction,
+  });
+
   const isSimplified =
-    adaptationEnabled &&
-    thresholdReached &&
-    telemetry.isHighFriction &&
-    !forceStandardLayout;
+    recommendedLayout === "simplified" && !forceStandardLayout;
+
+  // Track only real rendered-layout transitions, after telemetry has loaded.
+  // A manual override is recorded as manual; recommendation changes are automatic.
+  const previousLayout = useRef<"standard" | "simplified" | null>(null);
+
+  useEffect(() => {
+    if (!telemetry.loaded) return;
+
+    const currentLayout = isSimplified ? "simplified" : "standard";
+
+    if (previousLayout.current === null) {
+      previousLayout.current = currentLayout;
+      return;
+    }
+
+    if (previousLayout.current !== currentLayout) {
+      const source = forceStandardLayout ? "manual" : "automatic";
+      telemetry.trackAdaptation(currentLayout, source);
+      previousLayout.current = currentLayout;
+    }
+  }, [
+    telemetry.loaded,
+    telemetry.trackAdaptation,
+    isSimplified,
+    forceStandardLayout,
+  ]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

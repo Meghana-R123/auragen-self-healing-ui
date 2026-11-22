@@ -440,6 +440,71 @@ export default function FinancialApplication() {
           </div>
         </section>
 
+        {/* FIELD-LEVEL FRICTION MONITOR */}
+        <section className="mb-6 rounded-xl border border-white/10 bg-[#111a2b] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-indigo-300">
+                Field-Level Friction Monitor
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Friction estimates from focus, hesitation, errors, and time spent on each field.
+              </p>
+            </div>
+
+            <span className="text-xs text-slate-400">
+              {telemetry.fieldFrictionList.length} tracked fields
+            </span>
+          </div>
+
+          {telemetry.fieldFrictionList.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-400">
+              No field-level signals yet. Interact with the application fields to collect data.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {telemetry.fieldFrictionList.slice(0, 5).map((field) => (
+                <div
+                  key={field.field}
+                  className="rounded-lg border border-white/5 bg-[#0b1220] p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-200">
+                      {field.field}
+                    </span>
+
+                    <span className="text-sm font-semibold text-indigo-300">
+                      {field.frictionScore}/100
+                    </span>
+                  </div>
+
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-indigo-500"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, field.frictionScore))}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-400 sm:grid-cols-4">
+                    <span>Focus: {field.focusCount}</span>
+                    <span>Hesitations: {field.hesitationCount}</span>
+                    <span>Errors: {field.errorCount}</span>
+                    <span>
+                      Avg. time: {(field.averageTimeMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="mt-3 text-xs text-slate-500">
+            These are heuristic interaction signals, not a direct measurement of a person's cognitive state.
+          </p>
+        </section>
+
         {/* FORM SUBMISSION RESULT */}
         {submitted ? (
           <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-8">

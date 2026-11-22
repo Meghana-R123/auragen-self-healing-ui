@@ -21,6 +21,16 @@ export type AdaptationEvent = {
   timestamp: number;
 };
 
+export type FieldFriction = {
+  field: string;
+  focusCount: number;
+  hesitationCount: number;
+  errorCount: number;
+  totalTimeMs: number;
+  averageTimeMs: number;
+  frictionScore: number;
+};
+
 type AuraGenSettings = {
   cognitiveLoadThreshold: number;
   hesitationThresholdMs: number;
@@ -36,6 +46,7 @@ type StoredTelemetry = {
   repeatedClickCount?: number;
   adaptationCount?: number;
   adaptationEvents?: AdaptationEvent[];
+  fieldMetrics?: Record<string, FieldFriction>;
 };
 
 const STORAGE_KEY = "auragen-telemetry";
@@ -60,6 +71,23 @@ function readSettings(): AuraGenSettings {
   }
 }
 
+function calculateFieldScore(
+  hesitationCount: number,
+  errorCount: number,
+  averageTimeMs: number,
+  hesitationThresholdMs: number
+) {
+  const timeFactor = Math.min(
+    20,
+    Math.floor(averageTimeMs / Math.max(1, hesitationThresholdMs) * 10)
+  );
+
+  return Math.min(
+    100,
+    hesitationCount * 20 + errorCount * 25 + timeFactor
+  );
+}
+
 export function useTelemetry() {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [interactionCount, setInteractionCount] = useState(0);
@@ -69,6 +97,8 @@ export function useTelemetry() {
 
   const [adaptationCount, setAdaptationCount] = useState(0);
   const [adaptationEvents, setAdaptationEvents] = useState<AdaptationEvent[]>([]);
+
+  const [fieldMetrics, setFieldMetrics] = useState<Record<string, FieldFriction>>({});
 
   const [settings, setSettings] =
     useState<AuraGenSettings>(DEFAULT_SETTINGS);
@@ -97,6 +127,7 @@ export function useTelemetry() {
 
         setAdaptationCount(data.adaptationCount ?? 0);
         setAdaptationEvents(data.adaptationEvents ?? []);
+        setFieldMetrics(data.fieldMetrics ?? {});
 
         eventId.current = Math.max(
           0,
@@ -134,6 +165,7 @@ export function useTelemetry() {
           setRepeatedClickCount(data.repeatedClickCount ?? 0);
           setAdaptationCount(data.adaptationCount ?? 0);
           setAdaptationEvents(data.adaptationEvents ?? []);
+          setFieldMetrics(data.fieldMetrics ?? {});
         } catch (error) {
           console.error("Could not sync AuraGen telemetry:", error);
         }
@@ -160,6 +192,7 @@ export function useTelemetry() {
         repeatedClickCount,
         adaptationCount,
         adaptationEvents,
+        fieldMetrics,
       })
     );
   }, [
@@ -171,6 +204,7 @@ export function useTelemetry() {
     repeatedClickCount,
     adaptationCount,
     adaptationEvents,
+    fieldMetrics,
   ]);
 
   const addEvent = useCallback(
@@ -192,6 +226,31 @@ export function useTelemetry() {
     []
   );
 
+  const updateFieldMetric = useCallback(
+    (
+      field: string,
+      update: (previous: FieldFriction) => FieldFriction
+    ) => {
+      setFieldMetrics((previous) => {
+        const current = previous[field] ?? {
+          field,
+          focusCount: 0,
+          hesitationCount: 0,
+          errorCount: 0,
+          totalTimeMs: 0,
+          averageTimeMs: 0,
+          frictionScore: 0,
+        };
+
+        return {
+          ...previous,
+          [field]: update(current),
+        };
+      });
+    },
+    []
+  );
+
   const trackFocus = useCallback(
     (field: string) => {
       if (activeFields.current.has(field)) return;
@@ -200,9 +259,15 @@ export function useTelemetry() {
       focusTimes.current[field] = Date.now();
 
       setInteractionCount((count) => count + 1);
+
+      updateFieldMetric(field, (previous) => ({
+        ...previous,
+        focusCount: previous.focusCount + 1,
+      }));
+
       addEvent("focus", field, "Field focused");
     },
-    [addEvent]
+    [addEvent, updateFieldMetric]
   );
 
   const trackClick = useCallback(
@@ -236,6 +301,29 @@ export function useTelemetry() {
 
       const currentSettings = readSettings();
 
+      updateFieldMetric(field, (previous) => {
+        const totalTimeMs = previous.totalTimeMs + duration;
+        const averageTimeMs = totalTimeMs / previous.focusCount;
+        const hesitation =
+          duration >= currentSettings.hesitationThresholdMs;
+
+        const hesitationCount =
+          previous.hesitationCount + (hesitation ? 1 : 0);
+
+        return {
+          ...previous,
+          totalTimeMs,
+          averageTimeMs,
+          hesitationCount,
+          frictionScore: calculateFieldScore(
+            hesitationCount,
+            previous.errorCount,
+            averageTimeMs,
+            currentSettings.hesitationThresholdMs
+          ),
+        };
+      });
+
       if (duration >= currentSettings.hesitationThresholdMs) {
         setHesitationCount((count) => count + 1);
 
@@ -246,15 +334,27 @@ export function useTelemetry() {
         );
       }
     },
-    [addEvent]
+    [addEvent, updateFieldMetric]
   );
 
   const trackError = useCallback(
     (field: string) => {
       setErrorCount((count) => count + 1);
+
+      updateFieldMetric(field, (previous) => ({
+        ...previous,
+        errorCount: previous.errorCount + 1,
+        frictionScore: calculateFieldScore(
+          previous.hesitationCount,
+          previous.errorCount + 1,
+          previous.averageTimeMs,
+          readSettings().hesitationThresholdMs
+        ),
+      }));
+
       addEvent("error", field, "Validation error");
     },
-    [addEvent]
+    [addEvent, updateFieldMetric]
   );
 
   const trackAdaptation = useCallback(
@@ -308,6 +408,10 @@ export function useTelemetry() {
   const shouldAdapt =
     settings.autoAdaptationEnabled && isHighFriction;
 
+  const fieldFrictionList = Object.values(fieldMetrics).sort(
+    (a, b) => b.frictionScore - a.frictionScore
+  );
+
   return {
     events,
     interactionCount,
@@ -318,6 +422,9 @@ export function useTelemetry() {
     adaptationCount,
     adaptationEvents,
     trackAdaptation,
+
+    fieldMetrics,
+    fieldFrictionList,
 
     cognitiveLoadScore,
     settings,

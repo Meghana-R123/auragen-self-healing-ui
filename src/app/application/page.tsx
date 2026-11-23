@@ -535,6 +535,7 @@ export default function FinancialApplication() {
             onFieldFocus={telemetry.trackFocus}
             onFieldClick={telemetry.trackClick}
             onFieldBlur={telemetry.trackBlur}
+            fieldFriction={telemetry.fieldFrictionList}
           />
         )}
 

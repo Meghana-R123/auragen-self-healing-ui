@@ -212,8 +212,8 @@ export default function SettingsPage() {
               Adaptive UI Behaviour
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Control whether AuraGen is allowed to trigger
-              interface adaptation when friction is detected.
+              Control whether AuraGen can automatically adapt the
+              interface when interaction friction is detected.
             </p>
 
             <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-slate-700 bg-[#0b1222] p-4">
@@ -222,8 +222,8 @@ export default function SettingsPage() {
                   Automatic UI Adaptation
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Allow the adaptive engine to simplify interfaces
-                  when the configured threshold is reached.
+                  Allow the Financial Application to simplify its
+                  interface when the configured threshold is reached.
                 </p>
               </div>
 
@@ -231,6 +231,7 @@ export default function SettingsPage() {
                 type="button"
                 role="switch"
                 aria-checked={settings.autoAdaptationEnabled}
+                aria-label="Automatic UI Adaptation"
                 onClick={() =>
                   updateSetting(
                     "autoAdaptationEnabled",
@@ -253,9 +254,11 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <p className="mt-3 text-xs text-amber-400">
-              The adaptation engine is still under development.
-              Enabling this setting alone does not activate adaptation.
+            <p className="mt-3 text-xs text-emerald-400">
+              Automatic adaptation is implemented and can be enabled
+              above. Changes take effect after saving your settings.
+              AI-generated adaptation is available separately through
+              the Financial Application.
             </p>
           </div>
 

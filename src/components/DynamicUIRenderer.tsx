@@ -26,14 +26,148 @@ type DynamicUIRendererProps = {
   onFieldFocus?: (fieldId: string) => void;
   onFieldClick?: (fieldId: string) => void;
   onFieldBlur?: (fieldId: string) => void;
+  onFieldError?: (fieldId: string) => void;
   fieldFriction?: FieldFrictionSignal[];
 };
 
-function getFieldSuggestion(field: UIField): string {
-  const identifier = `${field.id} ${field.label}`.toLowerCase();
+type Assistance = {
+  title: string;
+  message: string;
+};
 
-  if (field.type === "email" || identifier.includes("email")) {
-    return "Check the email format. For example: name@example.com.";
+// Check the field's CURRENT value, independently of historical errors.
+function isFieldValueValid(
+  field: UIField,
+  value: string | boolean | undefined
+): boolean {
+  if (field.type === "checkbox") {
+    return !field.required || value === true;
+  }
+
+  const textValue =
+    typeof value === "string" ? value.trim() : "";
+
+  if (field.required && !textValue) {
+    return false;
+  }
+
+  // Optional empty fields are not currently invalid.
+  if (!textValue) {
+    return true;
+  }
+
+  switch (field.type) {
+    case "email":
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(textValue);
+
+    case "tel": {
+      const digits = textValue.replace(/\D/g, "");
+      return digits.length >= 7 && digits.length <= 15;
+    }
+
+    case "number":
+      return (
+        textValue !== "" &&
+        Number.isFinite(Number(textValue))
+      );
+
+    case "date":
+      return !Number.isNaN(Date.parse(textValue));
+
+    case "select":
+      return (
+        !field.options ||
+        field.options.some(
+          (option) => option.value === textValue
+        )
+      );
+
+    default:
+      return true;
+  }
+}
+
+function getFieldSuggestion(
+  field: UIField,
+  friction: FieldFrictionSignal
+): Assistance {
+  const identifier =
+    `${field.id} ${field.label}`.toLowerCase();
+
+  // Priority 1: An error that is still present.
+  if (friction.errorCount > 0) {
+    if (
+      field.type === "email" ||
+      identifier.includes("email")
+    ) {
+      return {
+        title: "Email correction",
+        message:
+          "Check that your email includes a valid name, @ symbol, and domain. Example: name@example.com.",
+      };
+    }
+
+    if (
+      field.type === "tel" ||
+      identifier.includes("phone") ||
+      identifier.includes("mobile")
+    ) {
+      return {
+        title: "Phone number correction",
+        message:
+          "Check the digits and country code. Remove unnecessary spaces or special characters.",
+      };
+    }
+
+    if (
+      field.type === "number" ||
+      identifier.includes("income") ||
+      identifier.includes("amount") ||
+      identifier.includes("emi")
+    ) {
+      return {
+        title: "Number correction",
+        message:
+          "Enter a numeric value only. Avoid currency symbols, commas, or text unless the field explicitly allows them.",
+      };
+    }
+
+    return {
+      title: "Let's correct this field",
+      message:
+        "Review the field instructions and check your entry carefully before continuing.",
+    };
+  }
+
+  // Priority 2: Repeated hesitation.
+  if (friction.hesitationCount >= 2) {
+    return {
+      title: "Simplified guidance",
+      message:
+        field.description ||
+        `Focus only on ${field.label.toLowerCase()} for now. Complete this field before moving to the next one.`,
+    };
+  }
+
+  // Priority 3: Extended time spent.
+  if (friction.averageTimeMs >= 8000) {
+    return {
+      title: "Step-by-step assistance",
+      message:
+        `First, review what ${field.label.toLowerCase()} is asking. Then enter the information, check it once, and continue.`,
+    };
+  }
+
+  // Priority 4: General field-specific assistance.
+  if (
+    field.type === "email" ||
+    identifier.includes("email")
+  ) {
+    return {
+      title: "Email assistance",
+      message:
+        "Check the email format. For example: name@example.com.",
+    };
   }
 
   if (
@@ -41,7 +175,11 @@ function getFieldSuggestion(field: UIField): string {
     identifier.includes("phone") ||
     identifier.includes("mobile")
   ) {
-    return "Enter a valid phone number. Check the country code if required.";
+    return {
+      title: "Phone assistance",
+      message:
+        "Enter a valid phone number. Check the country code if required.",
+    };
   }
 
   if (
@@ -50,22 +188,42 @@ function getFieldSuggestion(field: UIField): string {
     identifier.includes("amount") ||
     identifier.includes("emi")
   ) {
-    return "Enter a numeric value. Avoid currency symbols or unnecessary text.";
+    return {
+      title: "Number assistance",
+      message:
+        "Enter a numeric value. Avoid currency symbols or unnecessary text.",
+    };
   }
 
   if (field.type === "date") {
-    return "Select the date using the date picker and verify it before continuing.";
+    return {
+      title: "Date assistance",
+      message:
+        "Select the date using the date picker and verify it before continuing.",
+    };
   }
 
   if (field.type === "select") {
-    return "Review the available options and choose the one that best matches your situation.";
+    return {
+      title: "Selection assistance",
+      message:
+        "Review the available options and choose the one that best matches your situation.",
+    };
   }
 
   if (field.type === "textarea") {
-    return "Break your response into short, clear points. You can review it before continuing.";
+    return {
+      title: "Writing assistance",
+      message:
+        "Break your response into short, clear points. Review it before continuing.",
+    };
   }
 
-  return "Take this field one step at a time. Check the example or description before entering your answer.";
+  return {
+    title: "Field assistance",
+    message:
+      "Take this field one step at a time. Check the example or description before entering your answer.",
+  };
 }
 
 export default function DynamicUIRenderer({
@@ -76,6 +234,7 @@ export default function DynamicUIRenderer({
   onFieldFocus,
   onFieldClick,
   onFieldBlur,
+  onFieldError,
   fieldFriction = [],
 }: DynamicUIRendererProps) {
   const [currentSection, setCurrentSection] = useState(0);
@@ -119,8 +278,10 @@ export default function DynamicUIRenderer({
         if (
           value === undefined ||
           value === "" ||
-          value === false
+          value === false ||
+          (typeof value === "string" && !value.trim())
         ) {
+          onFieldError?.(field.id);
           return `${field.label} is required.`;
         }
       }
@@ -175,16 +336,61 @@ export default function DynamicUIRenderer({
     return fieldFriction.find(
       (metric) =>
         metric.field === field.id ||
-        metric.field.toLowerCase() === field.label.toLowerCase()
+        metric.field.toLowerCase() ===
+          field.label.toLowerCase()
     );
   };
 
   const renderField = (field: UIField) => {
     const friction = getFrictionForField(field);
 
-    const shouldShowAssistance =
+    const currentValue = values[field.id];
+
+    const currentlyValid = isFieldValueValid(
+      field,
+      currentValue
+    );
+
+    // Historical errors remain in telemetry, but only
+    // currently invalid values trigger correction guidance.
+    const hasCurrentError =
       !!friction &&
-      (friction.frictionScore >= 40 || friction.errorCount > 0);
+      friction.errorCount > 0 &&
+      !currentlyValid;
+
+    const nonErrorFrictionScore = friction
+      ? Math.max(
+          0,
+          friction.frictionScore -
+            friction.errorCount * 25
+        )
+      : 0;
+
+    const hasOtherFriction =
+      !!friction &&
+      (
+        friction.hesitationCount >= 2 ||
+        friction.averageTimeMs >= 8000 ||
+        nonErrorFrictionScore >= 40
+      );
+
+    const shouldShowAssistance =
+      hasCurrentError || hasOtherFriction;
+
+    // Hide historical error priority once the field is valid.
+    const activeFriction = friction
+      ? {
+          ...friction,
+          errorCount: hasCurrentError
+            ? friction.errorCount
+            : 0,
+        }
+      : null;
+
+    const assistance =
+      shouldShowAssistance && activeFriction
+        ? getFieldSuggestion(field, activeFriction)
+        : null;
 
     const commonProps = {
       id: field.id,
@@ -235,7 +441,10 @@ export default function DynamicUIRenderer({
           <select {...commonProps}>
             <option value="">Select an option</option>
             {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
+              <option
+                key={option.value}
+                value={option.value}
+              >
                 {option.label}
               </option>
             ))}
@@ -251,7 +460,10 @@ export default function DynamicUIRenderer({
               required={field.required}
               checked={values[field.id] === true}
               onChange={(event) =>
-                updateValue(field.id, event.target.checked)
+                updateValue(
+                  field.id,
+                  event.target.checked
+                )
               }
               onFocus={() => onFieldFocus?.(field.id)}
               onClick={() => onFieldClick?.(field.id)}
@@ -271,23 +483,34 @@ export default function DynamicUIRenderer({
           <input {...commonProps} type={field.type} />
         )}
 
-        {shouldShowAssistance && friction && (
+        {assistance && activeFriction && (
           <div
             className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"
             role="status"
             aria-live="polite"
           >
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-amber-300">
-                AuraGen Assistance
+                AuraGen · {assistance.title}
               </span>
+
               <span className="text-xs text-amber-200">
-                Friction: {friction.frictionScore}/100
+                Friction: {friction?.frictionScore ?? 0}/100
               </span>
             </div>
 
             <p className="mt-1 text-xs leading-relaxed text-slate-300">
-              {getFieldSuggestion(field)}
+              {assistance.message}
+            </p>
+
+            <p className="mt-2 text-[10px] text-slate-500">
+              {hasCurrentError
+                ? "Triggered by a current validation error"
+                : friction && friction.hesitationCount >= 2
+                  ? "Triggered by repeated hesitation"
+                  : friction && friction.averageTimeMs >= 8000
+                    ? "Triggered by extended time on field"
+                    : "Triggered by elevated non-error friction"}
             </p>
           </div>
         )}
@@ -315,7 +538,9 @@ export default function DynamicUIRenderer({
           </span>
         </div>
 
-        <h2 className="text-2xl font-bold">{schema.title}</h2>
+        <h2 className="text-2xl font-bold">
+          {schema.title}
+        </h2>
 
         {schema.description && (
           <p className="mt-2 text-sm text-slate-400">
@@ -330,6 +555,7 @@ export default function DynamicUIRenderer({
             <span>
               Step {currentSection + 1} of {totalSections}
             </span>
+
             <span>
               {Math.round(
                 ((currentSection + 1) / totalSections) * 100
@@ -351,9 +577,15 @@ export default function DynamicUIRenderer({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-8"
+      >
         {visibleSections.map((section) => (
-          <section key={section.id} className="space-y-5">
+          <section
+            key={section.id}
+            className="space-y-5"
+          >
             <div>
               <h3 className="text-lg font-semibold text-white">
                 {section.title}
@@ -379,7 +611,10 @@ export default function DynamicUIRenderer({
         ))}
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p
+            role="alert"
+            className="text-sm text-red-400"
+          >
             {error}
           </p>
         )}
